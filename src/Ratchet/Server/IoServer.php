@@ -29,6 +29,13 @@ class IoServer {
     public $socket;
 
     /**
+     * The IoConnection of each React connection. Kept here rather than as a property on React's connection, which
+     * would be a dynamic property on a class that is not ours (deprecated in PHP 8.2).
+     * @var \WeakMap<\React\Socket\ConnectionInterface, IoConnection>
+     */
+    protected $decorators;
+
+    /**
      * @param \Ratchet\MessageComponentInterface  $app      The Ratchet application stack to host
      * @param \React\Socket\ServerInterface       $socket   The React socket server to run the Ratchet application off of
      * @param \React\EventLoop\LoopInterface|null $loop     The React looper to run the Ratchet application off of
@@ -44,6 +51,7 @@ class IoServer {
         $this->loop = $loop;
         $this->app  = $app;
         $this->socket = $socket;
+        $this->decorators = new \WeakMap();
 
         $socket->on('connection', array($this, 'handleConnect'));
     }
@@ -80,16 +88,17 @@ class IoServer {
      * @param \React\Socket\ConnectionInterface $conn
      */
     public function handleConnect($conn) {
-        $conn->decor = new IoConnection($conn);
-        $conn->decor->resourceId = (int)$conn->stream;
+        $decor = new IoConnection($conn);
+        $this->decorators[$conn] = $decor;
+        $decor->resourceId = (int)$conn->stream;
 
         $uri = $conn->getRemoteAddress();
-        $conn->decor->remoteAddress = trim(
+        $decor->remoteAddress = trim(
             parse_url((strpos($uri, '://') === false ? 'tcp://' : '') . $uri, PHP_URL_HOST),
             '[]'
         );
 
-        $this->app->onOpen($conn->decor);
+        $this->app->onOpen($decor);
 
         $conn->on('data', function ($data) use ($conn) {
             $this->handleData($data, $conn);
@@ -109,7 +118,7 @@ class IoServer {
      */
     public function handleData($data, $conn) {
         try {
-            $this->app->onMessage($conn->decor, $data);
+            $this->app->onMessage($this->decorators[$conn] ?? null, $data);
         } catch (\Exception $e) {
             $this->handleError($e, $conn);
         }
@@ -121,12 +130,12 @@ class IoServer {
      */
     public function handleEnd($conn) {
         try {
-            $this->app->onClose($conn->decor);
+            $this->app->onClose($this->decorators[$conn] ?? null);
         } catch (\Exception $e) {
             $this->handleError($e, $conn);
         }
 
-        unset($conn->decor);
+        unset($this->decorators[$conn]);
     }
 
     /**
@@ -135,6 +144,6 @@ class IoServer {
      * @param \React\Socket\ConnectionInterface $conn
      */
     public function handleError(\Exception $e, $conn) {
-        $this->app->onError($conn->decor, $e);
+        $this->app->onError($this->decorators[$conn] ?? null, $e);
     }
 }
