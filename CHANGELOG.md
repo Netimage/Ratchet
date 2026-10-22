@@ -8,6 +8,10 @@ CHANGELOG
 
 ---
 
+* 1.0.2 (venuemanager fork)
+  * `IoConnection` allows dynamic properties: the per-connection data components set on it was a deprecation on PHP 8.2
+  * `IoServer` keeps each connection's `IoConnection` in a `WeakMap` instead of a `decor` property on React's connection, a dynamic property on a class that is not ours
+
 * 0.4.4 (2021-12-11)
   * Correct and update dependencies for forward compatibility
   * Added context for React Socket server to App
